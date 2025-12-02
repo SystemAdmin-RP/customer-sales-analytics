@@ -76,20 +76,41 @@ def generate_pdf_report(row, df_years, fig):
     y -= 30
 
     c.setFont("Helvetica", 11)
+
+    # --- Customer details ---
     c.drawString(50, y, f"Customer: {row['Customer Name']}")
     y -= 18
     c.drawString(50, y, f"Customer #: {row['Cust. #']}")
     y -= 18
-    c.drawString(50, y, f"Rep: {row['Outside Rep']}")
+    c.drawString(50, y, f"Sales Rep: {row['Outside Rep']}")
     y -= 18
-    c.drawString(50, y, f"Grand Total: {format_money(row['Grand Total'])}")
+    c.drawString(50, y, f"City: {row.get('City', '')}  State: {row.get('State', '')}")
+    y -= 18
+    c.drawString(50, y, f"Industry: {row.get('Industry', '')}")
+    y -= 25
 
-    # Save chart to memory
+    # --- Yearly Table ---
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Yearly Sales Summary")
+    y -= 22
+    c.setFont("Helvetica", 11)
+
+    for _, r in df_years.iterrows():
+        c.drawString(
+            50,
+            y,
+            f"{int(r['Year'])}: {format_money(r['Sales'])}"
+        )
+        y -= 18
+
+    # --- Chart ---
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
-    c.drawImage(ImageReader(chart_buf), 50, 200, width=500, preserveAspectRatio=True)
+    y = 200
+    c.drawImage(ImageReader(chart_buf), 50, y, width=500, preserveAspectRatio=True)
+
     c.showPage()
     c.save()
     buffer.seek(0)
