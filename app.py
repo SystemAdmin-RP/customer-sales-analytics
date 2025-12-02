@@ -153,93 +153,142 @@ def generate_pdf_report(row, df_years, fig):
     buffer.seek(0)
     return buffer.getvalue()
 
+from reportlab.lib.pagesizes import landscape, letter
 
 def generate_multi_pdf(selected_rows, fig, comparison_df_num):
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
 
-    c.setFont("Helvetica-Bold", 18)
-    c.drawCentredString(width / 2, height - 50, "Regal Plastics – Comparison Report")
+    # Landscape page
+    page = landscape(letter)
+    width, height = page
 
-    y = height - 90
-    c.setFont("Helvetica", 10)
+    c = canvas.Canvas(buffer, pagesize=page)
 
-    # Customers + totals
+    # HEADER
+    c.setFont("Helvetica-Bold", 22)
+    c.drawCentredString(width / 2, height - 50, "Regal Plastics")
+
+    c.setFont("Helvetica-Bold", 15)
+    c.drawCentredString(width / 2, height - 80, "Customer Comparison Report")
+
+    y = height - 120
+
+    # ======================
+    # Summary Overview
+    # ======================
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(40, y, "Summary Overview")
+    y -= 25
+
+    c.setFont("Helvetica", 11)
     for r in selected_rows:
         total = comparison_df_num.loc[r["Customer Name"], "Total"]
-        line = f"{r['Customer Name']} | #{r['Cust. #']} | Total: {format_money(total)}"
-        c.drawString(50, y, line)
-        y -= 14
+        line = f"{r['Customer Name']}  |  #{r['Cust. #']}  |  Total Sales: {format_money(total)}"
+        c.drawString(40, y, line)
+        y -= 16
 
-    # Compute avg growth per customer
+    # Highest growth
     growth_by_cust = {}
     for r in selected_rows:
         dfy = build_yearly_table(r)
         dfy = dfy.dropna(subset=["YoY % Change"])
-        if len(dfy) > 0:
-            growth_by_cust[r["Customer Name"]] = dfy["YoY % Change"].mean()
-        else:
-            growth_by_cust[r["Customer Name"]] = None
+        growth_by_cust[r["Customer Name"]] = (
+            dfy["YoY % Change"].mean() if len(dfy) else None
+        )
 
-    # Find highest growth
     valid_growth = {k: v for k, v in growth_by_cust.items() if v is not None}
     y -= 10
     c.setFont("Helvetica-Bold", 11)
+
     if valid_growth:
         best_name = max(valid_growth, key=valid_growth.get)
         best_val = valid_growth[best_name]
-        c.drawString(50, y, f"Highest Avg Growth: {best_name} ({best_val:.1f}%)")
+        c.drawString(40, y, f"Highest Avg Growth: {best_name} ({best_val:.1f}%)")
     else:
-        c.drawString(50, y, "Highest Avg Growth: N/A")
-    y -= 24
+        c.drawString(40, y, "Highest Avg Growth: N/A")
+    y -= 28
 
-    # Table title
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(50, y, "Sales Comparison Table")
+    # ======================
+    # Table Header
+    # ======================
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(40, y, "Sales Comparison Table")
     y -= 18
 
-    # Comparison table (Customer + years + Total)
-    c.setFont("Helvetica", 8)
+    columns = comparison_df_num.columns.tolist()
 
-    columns = comparison_df_num.columns
-    # Simple dynamic column positions
-    start_x = 50
-    col_width = 80
-    col_x_positions = [start_x + i * col_width for i in range(len(columns) + 1)]  # +1 for customer name
+    name_col_width = 230
+    other_col_width = 95
 
-    # Header row
+    col_x_positions = [40]
+    for i in range(len(columns)):
+        if i == 0:
+            col_x_positions.append(col_x_positions[-1] + name_col_width)
+        else:
+            col_x_positions.append(col_x_positions[-1] + other_col_width)
+
+    # Header bg
+    header_height = 18
+    c.setFillColorRGB(0.88, 0.88, 0.88)
+    c.rect(40, y - 4, col_x_positions[-1] - 40 + other_col_width, header_height, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+
+    c.setFont("Helvetica-Bold", 10)
     c.drawString(col_x_positions[0], y, "Customer")
     for i, col in enumerate(columns):
         c.drawString(col_x_positions[i + 1], y, str(col))
-    y -= 12
-    c.line(50, y, width - 50, y)
-    y -= 10
 
-    # Data rows
-    for cust in comparison_df_num.index:
-        row = comparison_df_num.loc[cust]
-        c.drawString(col_x_positions[0], y, cust[:18])  # truncate long names
+    y -= header_height
+
+    # ======================
+    # Table Rows
+    # ======================
+    row_h = 16
+    c.setFont("Helvetica", 9)
+
+    for idx, cust in enumerate(comparison_df_num.index):
+        # Row shading for alternating lines
+        if idx % 2 == 0:
+            c.setFillColorRGB(0.96, 0.96, 0.96)
+            c.rect(40, y - 2, col_x_positions[-1] - 40 + other_col_width, row_h, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+
+        display_name = cust if len(cust) <= 30 else cust[:28] + "…"
+        c.drawString(col_x_positions[0], y, display_name)
+
         for i, col in enumerate(columns):
-            val = row[col]
+            val = comparison_df_num.loc[cust, col]
             s = format_money(val) if not pd.isna(val) else ""
-            c.drawString(col_x_positions[i + 1], y, s)
-        y -= 12
-        if y < 140:  # leave room for chart
+            c.drawRightString(col_x_positions[i + 1] + other_col_width - 6, y, s)
+
+        y -= row_h
+
+        # stop before chart area
+        if y < 200:
             break
 
-    # Chart
+    y -= 30
+
+    # ======================
+    # CHART (bigger landscape)
+    # ======================
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
-    c.drawImage(ImageReader(chart_buf), 50, 80, width=500, height=200)
+    c.drawImage(
+        ImageReader(chart_buf),
+        60, 60,
+        width=650,
+        height=260,
+        preserveAspectRatio=True
+    )
 
+    # END PAGE
     c.showPage()
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
-
 
 # ---------------- APP START ----------------
 
