@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 
 YEAR_COLS = ["2022", "2023", "2024", "2025"]
@@ -65,12 +64,13 @@ def create_trend_figure(df_years, customer_name):
     fig.tight_layout()
     return fig
 
+# ---------------- PDF FUNCTIONS ----------------
+
 def generate_pdf_report(row, df_years, fig):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
-    # --- Title section ---
     c.setFont("Helvetica-Bold", 18)
     c.drawCentredString(width/2, height-50, "Regal Plastics")
 
@@ -80,7 +80,6 @@ def generate_pdf_report(row, df_years, fig):
     y = height - 120
     c.setFont("Helvetica", 11)
 
-    # --- Customer details ---
     c.drawString(50, y, f"Customer   : {row['Customer Name']}")
     y -= 16
     c.drawString(50, y, f"Customer # : {row['Cust. #']}")
@@ -92,12 +91,10 @@ def generate_pdf_report(row, df_years, fig):
     c.drawString(50, y, f"Industry   : {row.get('Industry','')}")
     y -= 24
 
-    # ---- CALCULATED METRICS ----
     total_sales = df_years["Sales"].sum()
     best = df_years.loc[df_years["Sales"].idxmax()]
     worst = df_years.loc[df_years["Sales"].idxmin()]
 
-    # average growth
     df2 = df_years.dropna(subset=["YoY % Change"])
     avg_growth = df2["YoY % Change"].mean() if len(df2)>0 else None
 
@@ -112,17 +109,15 @@ def generate_pdf_report(row, df_years, fig):
     c.drawString(50, y, f"Worst Year: {int(worst['Year'])} ({format_money(worst['Sales'])})")
     y -= 16
     if avg_growth:
-        c.drawString(50, y, f"Avg Annual Growth: {avg_growth:.1f}%")
+        c.drawString(50, y, f"Average Growth: {avg_growth:.1f}%")
         y -= 24
 
-    # --- Yearly table header ---
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, y, "Year   Sales              YoY$       YoY%")
     y -= 18
     c.line(50, y, width-50, y)
     y -= 12
 
-    # --- Table rows ---
     c.setFont("Helvetica", 11)
     for _, r in df_years.iterrows():
         line = f"{int(r['Year'])}   {format_money(r['Sales'])}"
@@ -131,17 +126,14 @@ def generate_pdf_report(row, df_years, fig):
         c.drawString(50, y, line)
         y -= 16
 
-    # --- CHART SCALED SMALLER ---
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
     c.drawImage(
         ImageReader(chart_buf),
-        50,
-        80,
-        width=500,         # reduced width
-        height=250,        # added height limit
+        50, 80,
+        width=500, height=250,
         preserveAspectRatio=True
     )
 
@@ -150,7 +142,34 @@ def generate_pdf_report(row, df_years, fig):
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- STREAMLIT APP ----------------
+
+def generate_multi_pdf(selected_rows, fig):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(width/2, height-50, "Regal Plastics – Comparison Report")
+
+    y = height - 90
+    c.setFont("Helvetica", 10)
+
+    for r in selected_rows:
+        c.drawString(50, y, f"{r['Customer Name']} | #{r['Cust. #']} | {format_money(r['Grand Total'])}")
+        y -= 14
+
+    chart_buf = io.BytesIO()
+    fig.savefig(chart_buf, format="png", bbox_inches="tight")
+    chart_buf.seek(0)
+
+    c.drawImage(ImageReader(chart_buf), 50, 100, width=500, height=250)
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# ---------------- APP START ----------------
 
 st.set_page_config(page_title="Customer Sales Analytics", layout="wide")
 st.title("📈 Customer Sales Analytics")
@@ -158,14 +177,11 @@ st.title("📈 Customer Sales Analytics")
 CSV_URL = "https://raw.githubusercontent.com/SystemAdmin-RP/customer-sales-analytics/main/CustomerTrend.csv"
 
 admin_pass = st.sidebar.text_input("Admin Password", type="password")
+uploaded = None
 
-# Admin upload (optional override)
 if admin_pass == "admin123":
     uploaded = st.sidebar.file_uploader("Upload CustomerTrend CSV", type="csv")
-else:
-    uploaded = None
 
-# If admin uploaded: use that. Otherwise: load GitHub CSV.
 if uploaded:
     df = pd.read_csv(uploaded, encoding="latin1")
 else:
@@ -189,31 +205,102 @@ if results.empty:
     st.warning("No match found.")
     st.stop()
 
-selected = st.selectbox(
-    "Select a customer:",
-    results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
-)
+tab1, tab2 = st.tabs(["Single Customer View", "Comparison View"])
 
-row = results.iloc[
-    (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
-     ).tolist().index(selected)
-]
+# ---------------- TAB 1: SINGLE CUSTOMER ----------------
 
-df_years = build_yearly_table(row)
-fig = create_trend_figure(df_years, row["Customer Name"])
-st.pyplot(fig)
+with tab1:
 
-st.dataframe(df_years.style.format({
-    "Sales": format_money,
-    "YoY $ Change": format_money,
-    "YoY % Change": format_pct,
-}), hide_index=True)
+    selected = st.selectbox(
+        "Select a customer:",
+        results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+    )
 
-pdf = generate_pdf_report(row, df_years, fig)
+    row = results.iloc[
+        (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+        ).tolist().index(selected)
+    ]
 
-st.download_button(
-    "Download PDF Report",
-    data=pdf,
-    file_name=f"{row['Cust. #']}_report.pdf",
-    mime="application/pdf",
-)
+    df_years = build_yearly_table(row)
+    fig = create_trend_figure(df_years, row["Customer Name"])
+    st.pyplot(fig)
+
+    st.dataframe(df_years.style.format({
+        "Sales": format_money,
+        "YoY $ Change": format_money,
+        "YoY % Change": format_pct,
+    }), hide_index=True)
+
+    pdf = generate_pdf_report(row, df_years, fig)
+
+    st.download_button(
+        "Download PDF Report",
+        data=pdf,
+        file_name=f"{row['Cust. #']}_report.pdf",
+        mime="application/pdf",
+    )
+
+# ---------------- TAB 2: MULTI-COMPARISON ----------------
+
+with tab2:
+
+    st.subheader("Compare multiple customers")
+
+    selected_customers = st.multiselect(
+        "Select 2–10 customers:",
+        results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+    )
+
+    if len(selected_customers) < 2:
+        st.stop()
+
+    selected_rows = []
+    for choice in selected_customers:
+        r = results.iloc[
+            (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+             ).tolist().index(choice)
+        ]
+        selected_rows.append(r)
+
+    fig2, ax = plt.subplots(figsize=(8,4))
+
+    for r in selected_rows:
+        dfy = build_yearly_table(r)
+        ax.plot(dfy["Year"], dfy["Sales"], marker="o", label=r["Customer Name"])
+
+    ax.set_title("Customer Comparison Trend")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Sales")
+    ax.grid(True)
+    ax.legend()
+
+    st.pyplot(fig2)
+
+    comparison_df = pd.DataFrame()
+
+    for r in selected_rows:
+        dfy = build_yearly_table(r)
+        row_data = {int(y): v for y,v in zip(dfy["Year"], dfy["Sales"])}
+        row_data["Customer"] = r["Customer Name"]
+        row_data["Total"] = dfy["Sales"].sum()
+        comparison_df = comparison_df.append(row_data, ignore_index=True)
+
+    comparison_df = comparison_df.set_index("Customer")
+    comparison_df = comparison_df.applymap(lambda x: format_money(x) if not pd.isna(x) else "")
+    st.subheader("Sales Comparison Table")
+    st.dataframe(comparison_df)
+
+    # KPIs
+    st.subheader("Comparison KPIs")
+    totals_sorted = comparison_df["Total"].str.replace("$","").str.replace(",","").astype(float).sort_values(ascending=False)
+
+    st.write(f"🏆 Best Customer: {totals_sorted.index[0]} — {format_money(totals_sorted.iloc[0])}")
+    st.write(f"📉 Lowest Customer: {totals_sorted.index[-1]} — {format_money(totals_sorted.iloc[-1])}")
+
+    pdf_multi = generate_multi_pdf(selected_rows, fig2)
+    st.download_button(
+        "Download Comparison PDF",
+        data=pdf_multi,
+        file_name="comparison_report.pdf",
+        mime="application/pdf",
+    )
