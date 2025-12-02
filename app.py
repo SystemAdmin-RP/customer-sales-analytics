@@ -255,19 +255,17 @@ tab1, tab2 = st.tabs(["Single Customer View", "Comparison View"])
 
 with tab1:
     if not query:
-        st.info("Type part of a customer name or number to search.")
-        st.stop()
+        st.info("Search for a customer above.")
+    else:
+        results = df[
+            df["Customer Name"].astype(str).str.contains(query, case=False)
+            | df["Cust. #"].astype(str).str.contains(query, case=False)
+        ]
 
-    results = df[
-        df["Customer Name"].astype(str).str.contains(query, case=False)
-        | df["Cust. #"].astype(str).str.contains(query, case=False)
-    ]
-
-    if results.empty:
-        st.warning("No match found.")
-        st.stop()
-
-    selected = st.selectbox(
+        if results.empty:
+            st.warning("No match found.")
+        else:
+        selected = st.selectbox(
         "Select a customer:",
         results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
     )
