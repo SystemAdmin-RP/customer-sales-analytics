@@ -143,8 +143,8 @@ def generate_pdf_report(row, df_years, fig):
 
     c.drawImage(
         ImageReader(chart_buf),
-        50, 80,
-        width=500, height=250,
+        50, 100,
+        width=500, height=300,
         preserveAspectRatio=True
     )
 
@@ -338,7 +338,7 @@ with tab2:
             selected_rows.append(r)
 
         # Trend comparison chart
-        fig2, ax = plt.subplots(figsize=(8, 4))
+        fig2, ax = plt.subplots(figsize=(6, 3))
 
         comparison_rows = []
         for r in selected_rows:
