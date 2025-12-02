@@ -1,6 +1,5 @@
 import io
 import re
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -9,29 +8,25 @@ import matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
-
-
-# ---------- Helpers ----------
+from reportlab.lib.utils import ImageReader
 
 YEAR_COLS = ["2022", "2023", "2024", "2025"]
 MONEY_COLS = YEAR_COLS + ["Grand Total"]
 
+# ---------------- HELPERS ----------------
 
 def parse_money_val(x):
     if x is None or (isinstance(x, float) and np.isnan(x)):
         return np.nan
-    s = str(x).strip()
-    if s in ["", "-", "nan", "None", "$-", "$-   "]:
+    s = str(x).strip().replace("$","").replace(",","")
+    if s in ["","-","nan","None"]:
         return np.nan
-    s = s.replace("$", "").replace(",", "").strip()
-    m = re.fullmatch(r"\((.*)\)", s)
-    if m:
-        s = "-" + m.group(1)
+    if "(" in s and ")" in s:
+        s = "-" + s.replace("(","").replace(")","")
     try:
         return float(s)
-    except Exception:
+    except:
         return np.nan
-
 
 def build_yearly_table(row):
     data = []
@@ -44,34 +39,21 @@ def build_yearly_table(row):
         yoy_pct = None
         if prev is not None and prev != 0:
             yoy_change = val - prev
-            yoy_pct = (yoy_change / prev) * 100.0
-        data.append(
-            {
-                "Year": int(year),
-                "Sales": val,
-                "YoY $ Change": yoy_change,
-                "YoY % Change": yoy_pct,
-            }
-        )
+            yoy_pct = (yoy_change / prev) * 100
+        data.append({
+            "Year": int(year),
+            "Sales": val,
+            "YoY $ Change": yoy_change,
+            "YoY % Change": yoy_pct,
+        })
         prev = val
-
-    if not data:
-        return pd.DataFrame(columns=["Year", "Sales", "YoY $ Change", "YoY % Change"])
-
     return pd.DataFrame(data)
 
-
 def format_money(x):
-    if pd.isna(x):
-        return ""
-    return f"${x:,.2f}"
-
+    return "" if pd.isna(x) else f"${x:,.2f}"
 
 def format_pct(x):
-    if pd.isna(x):
-        return ""
-    return f"{x:+.1f}%"
-
+    return "" if pd.isna(x) else f"{x:+.1f}%"
 
 def create_trend_figure(df_years, customer_name):
     fig, ax = plt.subplots()
@@ -83,51 +65,51 @@ def create_trend_figure(df_years, customer_name):
     fig.tight_layout()
     return fig
 
-
 def generate_pdf_report(row, df_years, fig):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
-    name = str(row.get("Customer Name", "")).strip()
-    num = str(row.get("Cust. #", "")).strip()
-    rep = str(row.get("Outside Rep", "")).strip()
-    grand_total = row.get("Grand Total", np.nan)
-
     y = height - 75
     c.setFont("Helvetica-Bold", 16)
     c.drawString(50, y, "Customer Performance Report")
-    y -= 35
+    y -= 30
 
     c.setFont("Helvetica", 11)
-    c.drawString(50, y, f"Customer: {name}")
+    c.drawString(50, y, f"Customer: {row['Customer Name']}")
     y -= 18
-    c.drawString(50, y, f"Customer #: {num}")
+    c.drawString(50, y, f"Customer #: {row['Cust. #']}")
     y -= 18
-    c.drawString(50, y, f"Rep: {rep}")
+    c.drawString(50, y, f"Rep: {row['Outside Rep']}")
     y -= 18
-    c.drawString(50, y, f"Grand Total: {format_money(grand_total)}")
-    y -= 35
+    c.drawString(50, y, f"Grand Total: {format_money(row['Grand Total'])}")
 
-    for _, r in df_years.iterrows():
-        c.drawString(50, y, f"{int(r['Year'])}: {format_money(r['Sales'])}")
-        y -= 18
+    # Save chart to memory
+    chart_buf = io.BytesIO()
+    fig.savefig(chart_buf, format="png", bbox_inches="tight")
+    chart_buf.seek(0)
 
-    buffer.seek(0)
+    c.drawImage(ImageReader(chart_buf), 50, 200, width=500, preserveAspectRatio=True)
+    c.showPage()
     c.save()
+    buffer.seek(0)
     return buffer.getvalue()
 
-
-# ---------- Streamlit App ----------
+# ---------------- STREAMLIT APP ----------------
 
 st.set_page_config(page_title="Customer Sales Analytics", layout="wide")
-
 st.title("📈 Customer Sales Analytics")
 
-uploaded = st.file_uploader("Upload CustomerTrend CSV", type="csv")
+# --- SHOW UPLOAD ONLY IF ADMIN ---
+admin_pass = st.sidebar.text_input("Admin Password", type="password")
 
+uploaded = None
+if admin_pass == "admin123":
+    uploaded = st.sidebar.file_uploader("Upload CustomerTrend CSV", type="csv")
+
+# --- IF NO FILE YET ---
 if uploaded is None:
-    st.info("Upload your CSV above to begin.")
+    st.info("Waiting for admin to upload latest CSV...")
     st.stop()
 
 df = pd.read_csv(uploaded, encoding="latin1")
@@ -152,29 +134,29 @@ if results.empty:
 
 selected = st.selectbox(
     "Select a customer:",
-    results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")",
+    results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
 )
 
-row = results.iloc[[i for i, v in enumerate(
-    results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
-) if v == selected][0]]
+row = results.iloc[
+    (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+     ).tolist().index(selected)
+]
 
 df_years = build_yearly_table(row)
 fig = create_trend_figure(df_years, row["Customer Name"])
-
 st.pyplot(fig)
 
-st.write(df_years.style.format({
+st.dataframe(df_years.style.format({
     "Sales": format_money,
     "YoY $ Change": format_money,
     "YoY % Change": format_pct,
-}))
+}), hide_index=True)
 
 pdf = generate_pdf_report(row, df_years, fig)
 
 st.download_button(
     "Download PDF Report",
     data=pdf,
-    file_name=f"Report_{row['Cust. #']}.pdf",
+    file_name=f"{row['Cust. #']}_report.pdf",
     mime="application/pdf",
 )
