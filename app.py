@@ -100,19 +100,21 @@ def generate_pdf_report(row, df_years, fig):
 st.set_page_config(page_title="Customer Sales Analytics", layout="wide")
 st.title("📈 Customer Sales Analytics")
 
-# --- SHOW UPLOAD ONLY IF ADMIN ---
+CSV_URL = "https://raw.githubusercontent.com/SystemAdmin-RP/customer-sales-analytics/main/CustomerTrend.csv"
+
 admin_pass = st.sidebar.text_input("Admin Password", type="password")
 
-uploaded = None
+# Admin upload (optional override)
 if admin_pass == "admin123":
     uploaded = st.sidebar.file_uploader("Upload CustomerTrend CSV", type="csv")
+else:
+    uploaded = None
 
-# --- IF NO FILE YET ---
-if uploaded is None:
-    st.info("Waiting for admin to upload latest CSV...")
-    st.stop()
-
-df = pd.read_csv(uploaded, encoding="latin1")
+# If admin uploaded: use that. Otherwise: load GitHub CSV.
+if uploaded:
+    df = pd.read_csv(uploaded, encoding="latin1")
+else:
+    df = pd.read_csv(CSV_URL, encoding="latin1")
 
 for col in MONEY_COLS:
     if col in df.columns:
