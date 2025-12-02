@@ -27,6 +27,7 @@ def parse_money_val(x):
     except:
         return np.nan
 
+
 def build_yearly_table(row):
     data = []
     prev = None
@@ -48,11 +49,14 @@ def build_yearly_table(row):
         prev = val
     return pd.DataFrame(data)
 
+
 def format_money(x):
     return "" if pd.isna(x) else f"${x:,.2f}"
 
+
 def format_pct(x):
     return "" if pd.isna(x) else f"{x:+.1f}%"
+
 
 def create_trend_figure(df_years, customer_name):
     fig, ax = plt.subplots()
@@ -64,6 +68,7 @@ def create_trend_figure(df_years, customer_name):
     fig.tight_layout()
     return fig
 
+
 # ---------------- PDF FUNCTIONS ----------------
 
 def generate_pdf_report(row, df_years, fig):
@@ -71,6 +76,7 @@ def generate_pdf_report(row, df_years, fig):
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
+    # Title
     c.setFont("Helvetica-Bold", 18)
     c.drawCentredString(width / 2, height - 50, "Regal Plastics")
 
@@ -80,6 +86,7 @@ def generate_pdf_report(row, df_years, fig):
     y = height - 120
     c.setFont("Helvetica", 11)
 
+    # Customer details
     c.drawString(50, y, f"Customer   : {row['Customer Name']}")
     y -= 16
     c.drawString(50, y, f"Customer # : {row['Cust. #']}")
@@ -91,6 +98,7 @@ def generate_pdf_report(row, df_years, fig):
     c.drawString(50, y, f"Industry   : {row.get('Industry', '')}")
     y -= 24
 
+    # KPIs
     total_sales = df_years["Sales"].sum()
     best = df_years.loc[df_years["Sales"].idxmax()]
     worst = df_years.loc[df_years["Sales"].idxmin()]
@@ -112,12 +120,14 @@ def generate_pdf_report(row, df_years, fig):
         c.drawString(50, y, f"Average Growth: {avg_growth:.1f}%")
         y -= 24
 
+    # Yearly table header
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, y, "Year   Sales              YoY$       YoY%")
     y -= 18
     c.line(50, y, width - 50, y)
     y -= 12
 
+    # Table rows
     c.setFont("Helvetica", 11)
     for _, r in df_years.iterrows():
         line = f"{int(r['Year'])}   {format_money(r['Sales'])}"
@@ -126,6 +136,7 @@ def generate_pdf_report(row, df_years, fig):
         c.drawString(50, y, line)
         y -= 16
 
+    # Chart
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
@@ -142,6 +153,7 @@ def generate_pdf_report(row, df_years, fig):
     buffer.seek(0)
     return buffer.getvalue()
 
+
 def generate_multi_pdf(selected_rows, fig, comparison_df_num):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
@@ -153,13 +165,14 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
     y = height - 90
     c.setFont("Helvetica", 10)
 
-    # Print title + customers + total sales
-    for idx, r in enumerate(selected_rows):
+    # Customers + totals
+    for r in selected_rows:
         total = comparison_df_num.loc[r["Customer Name"], "Total"]
-        c.drawString(50, y, f"{r['Customer Name']} | #{r['Cust. #']} | Total: {format_money(total)}")
+        line = f"{r['Customer Name']} | #{r['Cust. #']} | Total: {format_money(total)}"
+        c.drawString(50, y, line)
         y -= 14
 
-    # compute growth rates
+    # Compute avg growth per customer
     growth_by_cust = {}
     for r in selected_rows:
         dfy = build_yearly_table(r)
@@ -169,61 +182,64 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         else:
             growth_by_cust[r["Customer Name"]] = None
 
-    # biggest growth label
-    growth_sorted = sorted(
-        growth_by_cust.items(),
-        key=lambda x: (x[1] is not None, x[1]),
-        reverse=True
-    )
-
-    best_growth_name, best_growth_value = growth_sorted[0]
-    y -= 14
+    # Find highest growth
+    valid_growth = {k: v for k, v in growth_by_cust.items() if v is not None}
+    y -= 10
     c.setFont("Helvetica-Bold", 11)
-    if best_growth_value is not None:
-        c.drawString(50, y, f"Highest Avg Growth: {best_growth_name} ({best_growth_value:.1f}%)")
+    if valid_growth:
+        best_name = max(valid_growth, key=valid_growth.get)
+        best_val = valid_growth[best_name]
+        c.drawString(50, y, f"Highest Avg Growth: {best_name} ({best_val:.1f}%)")
     else:
         c.drawString(50, y, "Highest Avg Growth: N/A")
-    y -= 20
+    y -= 24
 
-    # === Draw the comparison table ===
+    # Table title
     c.setFont("Helvetica-Bold", 11)
     c.drawString(50, y, "Sales Comparison Table")
     y -= 18
 
-    c.setFont("Helvetica", 9)
+    # Comparison table (Customer + years + Total)
+    c.setFont("Helvetica", 8)
 
-    # format table columns
     columns = comparison_df_num.columns
-    col_x_positions = [50, 180, 260, 340, 420, 500]  # adjust later if needed
+    # Simple dynamic column positions
+    start_x = 50
+    col_width = 80
+    col_x_positions = [start_x + i * col_width for i in range(len(columns) + 1)]  # +1 for customer name
 
-    # draw column headers
+    # Header row
+    c.drawString(col_x_positions[0], y, "Customer")
     for i, col in enumerate(columns):
-        c.drawString(col_x_positions[i], y, str(col))
+        c.drawString(col_x_positions[i + 1], y, str(col))
     y -= 12
     c.line(50, y, width - 50, y)
-    y -= 12
+    y -= 10
 
-    # draw rows
+    # Data rows
     for cust in comparison_df_num.index:
         row = comparison_df_num.loc[cust]
-        c.drawString(col_x_positions[0], y, cust)
-        for i, col in enumerate(columns[1:], start=1):
+        c.drawString(col_x_positions[0], y, cust[:18])  # truncate long names
+        for i, col in enumerate(columns):
             val = row[col]
             s = format_money(val) if not pd.isna(val) else ""
-            c.drawString(col_x_positions[i], y, s)
-        y -= 14
+            c.drawString(col_x_positions[i + 1], y, s)
+        y -= 12
+        if y < 140:  # leave room for chart
+            break
 
-    # === add chart ===
+    # Chart
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
-    c.drawImage(ImageReader(chart_buf), 50, 100, width=500, height=240)
+    c.drawImage(ImageReader(chart_buf), 50, 80, width=500, height=200)
 
     c.showPage()
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
+
 
 # ---------------- APP START ----------------
 
@@ -265,44 +281,42 @@ with tab1:
         if results.empty:
             st.warning("No match found.")
         else:
-        selected = st.selectbox(
-        "Select a customer:",
-        results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
-    )
+            selected = st.selectbox(
+                "Select a customer:",
+                results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+            )
 
-    row = results.iloc[
-        (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
-         ).tolist().index(selected)
-    ]
+            row = results.iloc[
+                (results["Customer Name"] + " (#" + results["Cust. #"].astype(str) + ")"
+                 ).tolist().index(selected)
+            ]
 
-    df_years = build_yearly_table(row)
-    fig = create_trend_figure(df_years, row["Customer Name"])
-    st.pyplot(fig)
+            df_years = build_yearly_table(row)
+            fig = create_trend_figure(df_years, row["Customer Name"])
+            st.pyplot(fig)
 
-    st.dataframe(
-        df_years.style.format({
-            "Sales": format_money,
-            "YoY $ Change": format_money,
-            "YoY % Change": format_pct,
-        }),
-        hide_index=True
-    )
+            st.dataframe(
+                df_years.style.format({
+                    "Sales": format_money,
+                    "YoY $ Change": format_money,
+                    "YoY % Change": format_pct,
+                }),
+                hide_index=True
+            )
 
-    pdf = generate_pdf_report(row, df_years, fig)
-
-    st.download_button(
-        "Download PDF Report",
-        data=pdf,
-        file_name=f"{row['Cust. #']}_report.pdf",
-        mime="application/pdf",
-    )
+            pdf = generate_pdf_report(row, df_years, fig)
+            st.download_button(
+                "Download PDF Report",
+                data=pdf,
+                file_name=f"{row['Cust. #']}_report.pdf",
+                mime="application/pdf",
+            )
 
 # ---------------- TAB 2: MULTI-COMPARISON ----------------
 
 with tab2:
     st.subheader("Compare multiple customers (any from the entire dataset)")
 
-    # Use ALL customers, not filtered by the search box
     all_options = df["Customer Name"].astype(str) + " (#" + df["Cust. #"].astype(str) + ")"
 
     selected_customers = st.multiselect(
@@ -312,66 +326,63 @@ with tab2:
 
     if len(selected_customers) == 0:
         st.info("Select at least 2 customers to see comparison.")
-        st.stop()
-
-    if len(selected_customers) < 2:
+    elif len(selected_customers) < 2:
         st.warning("Please select at least 2 customers.")
-        st.stop()
-
-    if len(selected_customers) > 10:
+    elif len(selected_customers) > 10:
         st.warning("Please select 10 or fewer customers.")
-        st.stop()
+    else:
+        # Build selected rows
+        selected_rows = []
+        for choice in selected_customers:
+            r = df.iloc[(all_options == choice).to_numpy().nonzero()[0][0]]
+            selected_rows.append(r)
 
-    selected_rows = []
-    for choice in selected_customers:
-        r = df.iloc[(all_options == choice).to_numpy().nonzero()[0][0]]
-        selected_rows.append(r)
+        # Trend comparison chart
+        fig2, ax = plt.subplots(figsize=(8, 4))
 
-    # Trend comparison chart
-    fig2, ax = plt.subplots(figsize=(8, 4))
+        comparison_rows = []
+        for r in selected_rows:
+            dfy = build_yearly_table(r)
+            ax.plot(dfy["Year"], dfy["Sales"], marker="o", label=r["Customer Name"])
 
-    comparison_rows = []
-    for r in selected_rows:
-        dfy = build_yearly_table(r)
-        ax.plot(dfy["Year"], dfy["Sales"], marker="o", label=r["Customer Name"])
+            row_data = {int(y): v for y, v in zip(dfy["Year"], dfy["Sales"])}
+            row_data["Customer"] = r["Customer Name"]
+            row_data["Total"] = dfy["Sales"].sum()
+            comparison_rows.append(row_data)
 
-        row_data = {int(y): v for y, v in zip(dfy["Year"], dfy["Sales"])}
-        row_data["Customer"] = r["Customer Name"]
-        row_data["Total"] = dfy["Sales"].sum()
-        comparison_rows.append(row_data)
+        ax.set_title("Customer Comparison Trend")
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Sales")
+        ax.grid(True)
+        ax.legend()
 
-    ax.set_title("Customer Comparison Trend")
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Sales")
-    ax.grid(True)
-    ax.legend()
+        st.pyplot(fig2)
 
-    st.pyplot(fig2)
+        # Comparison numeric + display tables
+        comparison_df_num = pd.DataFrame(comparison_rows).set_index("Customer")
+        comparison_df_display = comparison_df_num.applymap(
+            lambda x: format_money(x) if not pd.isna(x) else ""
+        )
 
-    # Build numeric comparison table, then a formatted version for display
-    comparison_df_num = pd.DataFrame(comparison_rows).set_index("Customer")
-    comparison_df_display = comparison_df_num.applymap(
-        lambda x: format_money(x) if not pd.isna(x) else ""
-    )
+        st.subheader("Sales Comparison Table")
+        st.dataframe(comparison_df_display)
 
-    st.subheader("Sales Comparison Table")
-    st.dataframe(comparison_df_display)
+        # KPIs
+        st.subheader("Comparison KPIs")
+        totals_sorted = comparison_df_num["Total"].sort_values(ascending=False)
 
-    # KPIs using numeric totals
-    st.subheader("Comparison KPIs")
-    totals_sorted = comparison_df_num["Total"].sort_values(ascending=False)
+        st.write(
+            f"🏆 Best Customer: {totals_sorted.index[0]} — {format_money(totals_sorted.iloc[0])}"
+        )
+        st.write(
+            f"📉 Lowest Customer: {totals_sorted.index[-1]} — {format_money(totals_sorted.iloc[-1])}"
+        )
 
-    st.write(
-        f"🏆 Best Customer: {totals_sorted.index[0]} — {format_money(totals_sorted.iloc[0])}"
-    )
-    st.write(
-        f"📉 Lowest Customer: {totals_sorted.index[-1]} — {format_money(totals_sorted.iloc[-1])}"
-    )
-
-    pdf_multi = generate_multi_pdf(selected_rows, fig2, comparison_df_num)
-    st.download_button(
-        "Download Comparison PDF",
-        data=pdf_multi,
-        file_name="comparison_report.pdf",
-        mime="application/pdf",
-    )
+        # Comparison PDF
+        pdf_multi = generate_multi_pdf(selected_rows, fig2, comparison_df_num)
+        st.download_button(
+            "Download Comparison PDF",
+            data=pdf_multi,
+            file_name="comparison_report.pdf",
+            mime="application/pdf",
+        )
