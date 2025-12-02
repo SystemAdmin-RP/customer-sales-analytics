@@ -187,27 +187,6 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         c.drawString(40, y, line)
         y -= 16
 
-    # Highest growth
-    growth_by_cust = {}
-    for r in selected_rows:
-        dfy = build_yearly_table(r)
-        dfy = dfy.dropna(subset=["YoY % Change"])
-        growth_by_cust[r["Customer Name"]] = (
-            dfy["YoY % Change"].mean() if len(dfy) else None
-        )
-
-    valid_growth = {k: v for k, v in growth_by_cust.items() if v is not None}
-    y -= 10
-    c.setFont("Helvetica-Bold", 11)
-
-    if valid_growth:
-        best_name = max(valid_growth, key=valid_growth.get)
-        best_val = valid_growth[best_name]
-        c.drawString(40, y, f"Highest Avg Growth: {best_name} ({best_val:.1f}%)")
-    else:
-        c.drawString(40, y, "Highest Avg Growth: N/A")
-    y -= 28
-
     # ======================
     # Table Header
     # ======================
@@ -264,7 +243,7 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         y -= row_h
 
         # stop before chart area
-        if y < 200:
+        if y < 260:    # stop table earlier to make room for chart
             break
 
     y -= 30
@@ -278,9 +257,9 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
 
     c.drawImage(
         ImageReader(chart_buf),
-        60, 60,
+        60, 40,    # moved lower on page
         width=650,
-        height=260,
+        height=240,    # slightly shorter for better fit
         preserveAspectRatio=True
     )
 
