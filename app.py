@@ -70,46 +70,80 @@ def generate_pdf_report(row, df_years, fig):
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
-    y = height - 75
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, y, "Customer Performance Report")
-    y -= 30
+    # --- Title section ---
+    c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(width/2, height-50, "Regal Plastics")
 
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, height-90, "Customer Performance Report")
+
+    y = height - 120
     c.setFont("Helvetica", 11)
 
     # --- Customer details ---
-    c.drawString(50, y, f"Customer: {row['Customer Name']}")
-    y -= 18
-    c.drawString(50, y, f"Customer #: {row['Cust. #']}")
-    y -= 18
-    c.drawString(50, y, f"Sales Rep: {row['Outside Rep']}")
-    y -= 18
-    c.drawString(50, y, f"City: {row.get('City', '')}  State: {row.get('State', '')}")
-    y -= 18
-    c.drawString(50, y, f"Industry: {row.get('Industry', '')}")
-    y -= 25
+    c.drawString(50, y, f"Customer   : {row['Customer Name']}")
+    y -= 16
+    c.drawString(50, y, f"Customer # : {row['Cust. #']}")
+    y -= 16
+    c.drawString(50, y, f"Sales Rep  : {row.get('Outside Rep','')}")
+    y -= 16
+    c.drawString(50, y, f"City       : {row.get('City','')}  State: {row.get('State','')}")
+    y -= 16
+    c.drawString(50, y, f"Industry   : {row.get('Industry','')}")
+    y -= 24
 
-    # --- Yearly Table ---
+    # ---- CALCULATED METRICS ----
+    total_sales = df_years["Sales"].sum()
+    best = df_years.loc[df_years["Sales"].idxmax()]
+    worst = df_years.loc[df_years["Sales"].idxmin()]
+
+    # average growth
+    df2 = df_years.dropna(subset=["YoY % Change"])
+    avg_growth = df2["YoY % Change"].mean() if len(df2)>0 else None
+
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Yearly Sales Summary")
-    y -= 22
+    c.drawString(50, y, "Summary KPIs")
+    y -= 20
     c.setFont("Helvetica", 11)
+    c.drawString(50, y, f"Total Sales: {format_money(total_sales)}")
+    y -= 16
+    c.drawString(50, y, f"Best Year: {int(best['Year'])}  ({format_money(best['Sales'])})")
+    y -= 16
+    c.drawString(50, y, f"Worst Year: {int(worst['Year'])} ({format_money(worst['Sales'])})")
+    y -= 16
+    if avg_growth:
+        c.drawString(50, y, f"Avg Annual Growth: {avg_growth:.1f}%")
+        y -= 24
 
+    # --- Yearly table header ---
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Year   Sales              YoY$       YoY%")
+    y -= 18
+    c.line(50, y, width-50, y)
+    y -= 12
+
+    # --- Table rows ---
+    c.setFont("Helvetica", 11)
     for _, r in df_years.iterrows():
-        c.drawString(
-            50,
-            y,
-            f"{int(r['Year'])}: {format_money(r['Sales'])}"
-        )
-        y -= 18
+        line = f"{int(r['Year'])}   {format_money(r['Sales'])}"
+        if not pd.isna(r['YoY $ Change']):
+            line += f"     {format_money(r['YoY $ Change'])}     {format_pct(r['YoY % Change'])}"
+        c.drawString(50, y, line)
+        y -= 16
 
-    # --- Chart ---
+    # --- CHART SCALED SMALLER ---
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
-    y = 200
-    c.drawImage(ImageReader(chart_buf), 50, y, width=500, preserveAspectRatio=True)
+    c.drawImage(
+        ImageReader(chart_buf),
+        50,
+        80,
+        width=500,         # reduced width
+        height=250,        # added height limit
+        preserveAspectRatio=True
+    )
 
     c.showPage()
     c.save()
