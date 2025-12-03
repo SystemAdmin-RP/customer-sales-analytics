@@ -365,7 +365,8 @@ uploaded = None
 if admin_pass == "admin123":
     uploaded = st.sidebar.file_uploader("Upload CustomerTrend CSV", type="csv")
 
-df = pd.read_csv(uploaded, encoding="latin1") if uploaded else pd.read_csv(CSV_URL)
+df = pd.read_csv(uploaded, encoding="utf-8-sig", engine="python") \
+     if uploaded else pd.read_csv(CSV_URL, encoding="utf-8-sig", engine="python")
 
 for col in MONEY_COLS:
     if col in df.columns:
