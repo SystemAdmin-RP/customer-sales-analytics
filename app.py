@@ -9,10 +9,30 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
+
 # ---------------- CONSTANTS ----------------
 
 YEAR_COLS = ["2022", "2023", "2024", "2025"]
 MONEY_COLS = YEAR_COLS + ["Grand Total"]
+
+
+# ---------------- SAFE CSV LOADING ----------------
+
+def safe_read_csv(source):
+    """
+    Attempts multiple encodings to safely load any CSV
+    exported from Excel, ERP systems, Power Query, or GitHub.
+    """
+    encodings = ["utf-8-sig", "latin1", "ISO-8859-1"]
+
+    for enc in encodings:
+        try:
+            return pd.read_csv(source, encoding=enc, engine="python")
+        except Exception:
+            continue
+
+    # Absolute fallback
+    return pd.read_csv(source, engine="python", errors="ignore")
 
 
 # ---------------- HELPERS ----------------
@@ -79,6 +99,7 @@ def create_trend_figure(df_years, name):
     # Clean ticks
     ax.set_xticks(df_years["Year"])
     ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
+    ax.legend()
 
     fig.tight_layout()
     return fig
@@ -119,16 +140,13 @@ def generate_pdf_report(row, df_years, fig):
     total_sales = df_years["Sales"].sum()
     best = df_years.loc[df_years["Sales"].idxmax()]
     worst = df_years.loc[df_years["Sales"].idxmin()]
-    avg_growth = (
-        df_years["YoY % Change"].dropna().mean()
-        if "YoY % Change" in df_years.columns else None
-    )
+    avg_growth = df_years["YoY % Change"].dropna().mean()
 
     kpis = [
         ("Total Sales", format_money(total_sales)),
         ("Best Year", f"{int(best['Year'])} ({format_money(best['Sales'])})"),
         ("Worst Year", f"{int(worst['Year'])} ({format_money(worst['Sales'])})"),
-        ("Avg Growth", f"{avg_growth:.1f}%" if avg_growth is not None else "N/A")
+        ("Avg Growth", f"{avg_growth:.1f}%" if avg_growth else "N/A")
     ]
 
     # KPI STACKED CARDS
@@ -136,7 +154,7 @@ def generate_pdf_report(row, df_years, fig):
     card_w = width - 2 * left_x
     card_h = 38
     spacing = 6
-    kpi_y = y - 30
+    kpi_y = y - 40
 
     for title, value in kpis:
         c.setFillColorRGB(0.95, 0.95, 0.95)
@@ -154,7 +172,7 @@ def generate_pdf_report(row, df_years, fig):
         kpi_y -= (card_h + spacing)
 
     # YEARLY TABLE
-    table_y = kpi_y - 28
+    table_y = kpi_y - 30
 
     c.setFont("Helvetica-Bold", 13)
     c.drawString(left_x, table_y, "Yearly Performance")
@@ -190,10 +208,6 @@ def generate_pdf_report(row, df_years, fig):
         table_y -= 14
 
     # CHART
-    ax = fig.axes[0]
-    ax.set_xticks(df_years["Year"])
-    ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
-
     img_buf = io.BytesIO()
     fig.savefig(img_buf, format="png", bbox_inches="tight")
     img_buf.seek(0)
@@ -332,7 +346,7 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
 
         table_y -= 16
 
-    # CHART – priority A (bigger)
+    # CHART – option A (larger chart)
     img_buf = io.BytesIO()
     fig.savefig(img_buf, format="png", bbox_inches="tight")
     img_buf.seek(0)
@@ -352,6 +366,7 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
     return buffer.getvalue()
 
 
+
 # ---------------- STREAMLIT APP ----------------
 
 st.set_page_config(page_title="Customer Sales Analytics", layout="wide")
@@ -360,13 +375,12 @@ st.title("📈 Customer Sales Analytics")
 CSV_URL = "https://raw.githubusercontent.com/SystemAdmin-RP/customer-sales-analytics/main/CustomerTrend.csv"
 
 admin_pass = st.sidebar.text_input("Admin Password", type="password")
-
 uploaded = None
+
 if admin_pass == "admin123":
     uploaded = st.sidebar.file_uploader("Upload CustomerTrend CSV", type="csv")
 
-df = pd.read_csv(uploaded, encoding="utf-8-sig", engine="python") \
-     if uploaded else pd.read_csv(CSV_URL, encoding="utf-8-sig", engine="python")
+df = safe_read_csv(uploaded) if uploaded else safe_read_csv(CSV_URL)
 
 for col in MONEY_COLS:
     if col in df.columns:
@@ -455,7 +469,7 @@ with tab2:
             row_data["Total"] = dfy["Sales"].sum()
             comparison_rows.append(row_data)
 
-        ax.set_xticks(sorted({int(y) for y in YEAR_COLS}))
+        ax.set_xticks(sorted({int(y) for y in df_years["Year"].unique()}))
         ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
         ax.set_title("Customer Comparison Trend")
         ax.set_xlabel("Year")
