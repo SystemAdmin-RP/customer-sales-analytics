@@ -60,7 +60,6 @@ def format_pct(x):
 
 
 def create_trend_figure(df_years, customer_name):
-    # Smaller, nice-looking chart for web
     fig, ax = plt.subplots(figsize=(6, 3))
     ax.plot(df_years["Year"], df_years["Sales"], marker="o")
     ax.set_title(f"Year-over-Year Sales Trend - {customer_name}")
@@ -68,36 +67,33 @@ def create_trend_figure(df_years, customer_name):
     ax.set_ylabel("Sales")
     ax.grid(True)
 
-    # Clean integer years & dollars on Y-axis
+    # Clean ticks
     ax.set_xticks(df_years["Year"])
     ax.get_yaxis().set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
 
     fig.tight_layout()
     return fig
 
-# ---------------- PDF FUNCTIONS ----------------
+# ---------------- PDF: SINGLE CUSTOMER ----------------
 
 def generate_pdf_report(row, df_years, fig):
-    """Single-customer polished landscape PDF with KPI cards."""
     buffer = io.BytesIO()
 
-    # Landscape layout
+    # Landscape
     page = landscape(letter)
     width, height = page
     c = canvas.Canvas(buffer, pagesize=page)
 
-    # ========== HEADER ==========
+    # HEADER
     c.setFont("Helvetica-Bold", 26)
     c.drawCentredString(width / 2, height - 45, "Regal Plastics")
-
     c.setFont("Helvetica-Bold", 16)
     c.drawCentredString(width / 2, height - 75, "Customer Performance Report")
 
-    # ========== CUSTOMER INFO (LEFT) ==========
     left_x = 40
-    right_x = 430  # KPI card column
     top_y = height - 120
 
+    # CUSTOMER INFO
     c.setFont("Helvetica-Bold", 13)
     c.drawString(left_x, top_y, "Customer Information")
 
@@ -113,7 +109,7 @@ def generate_pdf_report(row, df_years, fig):
     y -= 16
     c.drawString(left_x, y, f"Industry:   {row.get('Industry','')}")
 
-    # ========== KPI CARDS (RIGHT) ==========
+    # KPI VALUES
     total_sales = df_years["Sales"].sum()
     best = df_years.loc[df_years["Sales"].idxmax()]
     worst = df_years.loc[df_years["Sales"].idxmin()]
@@ -127,32 +123,31 @@ def generate_pdf_report(row, df_years, fig):
         ("Avg Growth", f"{avg_growth:.1f}%" if avg_growth is not None else "N/A"),
     ]
 
-    card_w = 240
-    card_h = 46
-    spacing = 12
-    kpi_y = top_y - 10
+    # KPI CARDS STACKED (FULL WIDTH)
+    card_x = left_x
+    card_w = width - 2 * left_x
+    card_h = 42
+    spacing = 8
+    kpi_y = y - 24
 
     for title, value in kpi_data:
-        # Card background
         c.setFillColorRGB(0.95, 0.95, 0.95)
-        c.rect(right_x, kpi_y - card_h, card_w, card_h, fill=1, stroke=0)
+        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=1, stroke=0)
 
-        # Card border
         c.setStrokeColorRGB(0.75, 0.75, 0.75)
-        c.rect(right_x, kpi_y - card_h, card_w, card_h, fill=0, stroke=1)
+        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=0, stroke=1)
 
-        # Text
         c.setFillColorRGB(0, 0, 0)
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(right_x + 10, kpi_y - 14, title)
+        c.drawString(card_x + 10, kpi_y - 14, title)
 
         c.setFont("Helvetica", 11)
-        c.drawString(right_x + 10, kpi_y - 30, value)
+        c.drawString(card_x + 10, kpi_y - 30, value)
 
         kpi_y -= (card_h + spacing)
 
-    # ========== YEARLY TABLE ==========
-    table_y = y - 40
+    # YEARLY TABLE
+    table_y = kpi_y - 30
 
     c.setFont("Helvetica-Bold", 13)
     c.drawString(left_x, table_y, "Yearly Performance")
@@ -161,7 +156,6 @@ def generate_pdf_report(row, df_years, fig):
     headers = ["Year", "Sales", "YoY $", "YoY %"]
     col_x = [left_x, left_x + 70, left_x + 190, left_x + 290]
 
-    # Header background
     c.setFillColorRGB(0.88, 0.88, 0.88)
     c.rect(left_x, table_y - 3, 360, 16, fill=1, stroke=0)
     c.setFillColorRGB(0, 0, 0)
@@ -172,9 +166,12 @@ def generate_pdf_report(row, df_years, fig):
 
     table_y -= 16
 
-    # Alternating shaded rows
     c.setFont("Helvetica", 10)
     for i, (_, r) in enumerate(df_years.iterrows()):
+        # stop table early if too low
+        if table_y < 220:
+            break
+
         if i % 2 == 0:
             c.setFillColorRGB(0.96, 0.96, 0.96)
             c.rect(left_x, table_y - 2, 360, 14, fill=1, stroke=0)
@@ -189,7 +186,7 @@ def generate_pdf_report(row, df_years, fig):
 
         table_y -= 14
 
-    # ========== CHART FORMATTING (ensure proper axes in PDF) ==========
+    # CHART FORMATTING
     ax = fig.axes[0]
     ax.set_xticks(df_years["Year"])
     ax.get_yaxis().set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
@@ -198,13 +195,13 @@ def generate_pdf_report(row, df_years, fig):
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
-    # ========== DRAW CHART ==========
+    # DRAW CHART (BOTTOM, SMALLER HEIGHT)
     c.drawImage(
         ImageReader(chart_buf),
         left_x,
-        40,            # bottom padding
-        width=680,     # landscape-friendly
-        height=260,
+        40,
+        width=width - 2 * left_x,
+        height=180,
         preserveAspectRatio=True
     )
 
@@ -213,28 +210,25 @@ def generate_pdf_report(row, df_years, fig):
     buffer.seek(0)
     return buffer.getvalue()
 
+# ---------------- PDF: MULTI-COMPARISON ----------------
 
 def generate_multi_pdf(selected_rows, fig, comparison_df_num):
-    """Multi-customer polished landscape PDF with table + chart."""
     buffer = io.BytesIO()
 
     page = landscape(letter)
     width, height = page
     c = canvas.Canvas(buffer, pagesize=page)
 
-    # ========== HEADER ==========
+    # HEADER
     c.setFont("Helvetica-Bold", 26)
     c.drawCentredString(width / 2, height - 45, "Regal Plastics")
-
     c.setFont("Helvetica-Bold", 16)
     c.drawCentredString(width / 2, height - 75, "Customer Comparison Report")
 
+    left_x = 40
     y = height - 115
 
-    # ========== SUMMARY OVERVIEW (LEFT) ==========
-    left_x = 40
-    right_x = 430
-
+    # SUMMARY OVERVIEW
     c.setFont("Helvetica-Bold", 13)
     c.drawString(left_x, y, "Summary Overview")
     y -= 22
@@ -246,8 +240,7 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         c.drawString(left_x, y, line)
         y -= 16
 
-    # KPI cards for comparison (right side)
-    # Best customer, lowest customer, combined total, average per customer
+    # KPI CARDS STACKED FULL WIDTH
     totals_sorted = comparison_df_num["Total"].sort_values(ascending=False)
     best_name = totals_sorted.index[0]
     best_val = totals_sorted.iloc[0]
@@ -263,40 +256,38 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         ("Avg per Customer", format_money(avg_per_cust)),
     ]
 
-    card_w = 260
-    card_h = 46
-    spacing = 12
-    kpi_y = height - 115
+    card_x = left_x
+    card_w = width - 2 * left_x
+    card_h = 42
+    spacing = 8
+    kpi_y = y - 10
 
     for title, value in kpi_data:
-        # Card background
         c.setFillColorRGB(0.95, 0.95, 0.95)
-        c.rect(right_x, kpi_y - card_h, card_w, card_h, fill=1, stroke=0)
+        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=1, stroke=0)
 
-        # Border
         c.setStrokeColorRGB(0.75, 0.75, 0.75)
-        c.rect(right_x, kpi_y - card_h, card_w, card_h, fill=0, stroke=1)
+        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=0, stroke=1)
 
-        # Text
         c.setFillColorRGB(0, 0, 0)
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(right_x + 10, kpi_y - 14, title)
+        c.drawString(card_x + 10, kpi_y - 14, title)
 
         c.setFont("Helvetica", 11)
-        c.drawString(right_x + 10, kpi_y - 30, value)
+        c.drawString(card_x + 10, kpi_y - 30, value)
 
         kpi_y -= (card_h + spacing)
 
-    # ========== TABLE HEADER ==========
-    y -= 25
+    # TABLE HEADER
+    table_y = kpi_y - 24
     c.setFont("Helvetica-Bold", 13)
-    c.drawString(left_x, y, "Sales Comparison Table")
-    y -= 18
+    c.drawString(left_x, table_y, "Sales Comparison Table")
+    table_y -= 18
 
-    columns = comparison_df_num.columns.tolist()  # e.g., [2022, 2023, ..., Total]
+    columns = comparison_df_num.columns.tolist()  # e.g. [2022, 2023, ..., Total]
 
     name_col_width = 230
-    other_col_width = 95
+    other_col_width = 80
 
     col_x_positions = [left_x]
     for i in range(len(columns)):
@@ -305,56 +296,56 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         else:
             col_x_positions.append(col_x_positions[-1] + other_col_width)
 
-    # Header background
     header_height = 18
     c.setFillColorRGB(0.88, 0.88, 0.88)
-    c.rect(left_x, y - 4, col_x_positions[-1] - left_x + other_col_width, header_height, fill=1, stroke=0)
+    c.rect(left_x, table_y - 4,
+           col_x_positions[-1] - left_x + other_col_width,
+           header_height, fill=1, stroke=0)
     c.setFillColorRGB(0, 0, 0)
 
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(col_x_positions[0], y, "Customer")
+    c.drawString(col_x_positions[0], table_y, "Customer")
     for i, col in enumerate(columns):
-        c.drawString(col_x_positions[i + 1], y, str(col))
+        c.drawString(col_x_positions[i + 1], table_y, str(col))
 
-    y -= header_height
+    table_y -= header_height
 
-    # ========== TABLE ROWS ==========
+    # TABLE ROWS
     row_h = 16
     c.setFont("Helvetica", 9)
 
     for idx, cust in enumerate(comparison_df_num.index):
-        # Alternating shading
+        if table_y < 230:  # leave room for chart
+            break
+
         if idx % 2 == 0:
             c.setFillColorRGB(0.96, 0.96, 0.96)
-            c.rect(left_x, y - 2, col_x_positions[-1] - left_x + other_col_width, row_h, fill=1, stroke=0)
+            c.rect(left_x, table_y - 2,
+                   col_x_positions[-1] - left_x + other_col_width,
+                   row_h, fill=1, stroke=0)
             c.setFillColorRGB(0, 0, 0)
 
         display_name = cust if len(cust) <= 30 else cust[:28] + "…"
-        c.drawString(col_x_positions[0], y, display_name)
+        c.drawString(col_x_positions[0], table_y, display_name)
 
         for i, col in enumerate(columns):
             val = comparison_df_num.loc[cust, col]
             s = format_money(val) if not pd.isna(val) else ""
-            c.drawRightString(col_x_positions[i + 1] + other_col_width - 6, y, s)
+            c.drawRightString(col_x_positions[i + 1] + other_col_width - 6, table_y, s)
 
-        y -= row_h
+        table_y -= row_h
 
-        # stop before chart area
-        if y < 250:    # stop table earlier to make room for chart
-            break
-
-    y -= 20
-
-    # ========== CHART IMAGE ==========
+    # CHART IMAGE
     chart_buf = io.BytesIO()
     fig.savefig(chart_buf, format="png", bbox_inches="tight")
     chart_buf.seek(0)
 
     c.drawImage(
         ImageReader(chart_buf),
-        60, 40,              # lower on page
-        width=650,
-        height=240,
+        left_x,
+        40,
+        width=width - 2 * left_x,
+        height=180,
         preserveAspectRatio=True
     )
 
@@ -453,13 +444,12 @@ with tab2:
     elif len(selected_customers) > 10:
         st.warning("Please select 10 or fewer customers.")
     else:
-        # Build selected rows
         selected_rows = []
         for choice in selected_customers:
             r = df.iloc[(all_options == choice).to_numpy().nonzero()[0][0]]
             selected_rows.append(r)
 
-        # Trend comparison chart
+        # comparison chart
         fig2, ax = plt.subplots(figsize=(6, 3))
 
         comparison_rows = []
@@ -472,7 +462,6 @@ with tab2:
             row_data["Total"] = dfy["Sales"].sum()
             comparison_rows.append(row_data)
 
-        # Axis formatting: years & dollars
         all_years = sorted({int(y) for y in YEAR_COLS})
         ax.set_xticks(all_years)
         ax.get_yaxis().set_major_formatter(mtick.StrMethodFormatter('${x:,.0f}'))
@@ -485,7 +474,6 @@ with tab2:
 
         st.pyplot(fig2)
 
-        # Comparison numeric + display tables
         comparison_df_num = pd.DataFrame(comparison_rows).set_index("Customer")
         comparison_df_display = comparison_df_num.applymap(
             lambda x: format_money(x) if not pd.isna(x) else ""
@@ -494,7 +482,6 @@ with tab2:
         st.subheader("Sales Comparison Table")
         st.dataframe(comparison_df_display)
 
-        # KPIs
         st.subheader("Comparison KPIs")
         totals_sorted = comparison_df_num["Total"].sort_values(ascending=False)
 
@@ -505,7 +492,6 @@ with tab2:
             f"📉 Lowest Customer: {totals_sorted.index[-1]} — {format_money(totals_sorted.iloc[-1])}"
         )
 
-        # Comparison PDF
         pdf_multi = generate_multi_pdf(selected_rows, fig2, comparison_df_num)
         st.download_button(
             "Download Comparison PDF",
@@ -513,4 +499,3 @@ with tab2:
             file_name="comparison_report.pdf",
             mime="application/pdf",
         )
-
