@@ -304,7 +304,7 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
 
     # --- SMALL KPI RIBBON + SIDE CHART ---
     ribbon_y = y - 20
-    kpi_height = 22
+    kpi_height = 26       # increased from 22
     kpi_spacing = 6
 
     # Compute KPIs
@@ -323,9 +323,10 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         ("Avg/Customer", format_money(avg_val)),
     ]
 
-    # KPI ribbon widths
+    # Layout widths
     kpi_ribbon_width = content_width * 0.55
     chart_width = content_width * 0.40
+    chart_height = 150          # increased from 110
 
     card_width = (kpi_ribbon_width - (len(kpis) - 1) * kpi_spacing) / len(kpis)
 
@@ -334,37 +335,36 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
 
     # Draw KPI Ribbon (horizontal small cards)
     for title, value in kpis:
-        # Background
         c.setFillColor(REGAL_LIGHT_BLUE)
         c.rect(card_x, card_y - kpi_height, card_width, kpi_height, fill=1, stroke=0)
 
-        # Border
         c.setStrokeColor(REGAL_BLUE)
         c.rect(card_x, card_y - kpi_height, card_width, kpi_height, fill=0, stroke=1)
 
-        # Text
+        # Text adjustments
         c.setFillColor(REGAL_BLUE)
         c.setFont("Helvetica-Bold", 8)
-        c.drawString(card_x + 4, card_y - 7, title)
+        c.drawString(card_x + 4, card_y - 9, title)
 
         c.setFillColor(colors.black)
         c.setFont("Helvetica", 8)
-        c.drawString(card_x + 4, card_y - 17, value)
+        c.drawString(card_x + 4, card_y - 19, value)
 
         card_x += card_width + kpi_spacing
 
-    # --- CHART beside KPI ribbon ---
+    # --- CHART beside KPI ribbon (larger now) ---
     img_buf = io.BytesIO()
     fig.savefig(img_buf, format="png", bbox_inches="tight")
     img_buf.seek(0)
 
-    chart_x = left_x + kpi_ribbon_width + 12
+    chart_x = left_x + kpi_ribbon_width + 10
+
     c.drawImage(
         ImageReader(img_buf),
         chart_x,
         card_y - kpi_height - 10,
         width=chart_width,
-        height=110,
+        height=chart_height,   # increased
         preserveAspectRatio=True,
     )
 
