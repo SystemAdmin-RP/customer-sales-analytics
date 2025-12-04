@@ -284,93 +284,121 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
     c.setFillColor(colors.black)
 
     left_x = 40
-    right_margin = 40
-    content_width = width - left_x - right_margin
-    y = height - 115
+    top_y = height - 120
+    content_width = width - 80  # 40 left, 40 right
 
-    # SUMMARY OVERVIEW
+    # --- SUMMARY OVERVIEW ---
     c.setFont("Helvetica-Bold", 13)
-    c.drawString(left_x, y, "Summary Overview")
-    y -= 20
+    c.drawString(left_x, top_y, "Summary Overview")
+    y = top_y - 22
 
     c.setFont("Helvetica", 11)
     for r in selected_rows:
         total = comparison_df_num.loc[r["Customer Name"], "Total"]
-        line = f"{r['Customer Name']}  |  #{r['Cust. #']}  |  Total Sales: {format_money(total)}"
-        c.drawString(left_x, y, line)
-        y -= 16
+        c.drawString(
+            left_x,
+            y,
+            f"{r['Customer Name']} | #{r['Cust. #']} | Total Sales: {format_money(total)}"
+        )
+        y -= 15
 
-    # KPI CARDS STACKED (blue theme, smaller)
+    # --- SMALL KPI RIBBON + SIDE CHART ---
+    ribbon_y = y - 20
+    kpi_height = 22
+    kpi_spacing = 6
+
+    # Compute KPIs
     totals_sorted = comparison_df_num["Total"].sort_values(ascending=False)
     best_name = totals_sorted.index[0]
     best_val = totals_sorted.iloc[0]
     worst_name = totals_sorted.index[-1]
     worst_val = totals_sorted.iloc[-1]
     combined_total = comparison_df_num["Total"].sum()
-    avg = combined_total / len(comparison_df_num)
+    avg_val = combined_total / len(comparison_df_num)
 
     kpis = [
-        ("Top Customer", f"{best_name} ({format_money(best_val)})"),
-        ("Lowest Customer", f"{worst_name} ({format_money(worst_val)})"),
-        ("Total of Selected", format_money(combined_total)),
-        ("Avg per Customer", format_money(avg)),
+        (f"Top: {best_name}", format_money(best_val)),
+        (f"Low: {worst_name}", format_money(worst_val)),
+        ("Total", format_money(combined_total)),
+        ("Avg/Customer", format_money(avg_val)),
     ]
 
+    # KPI ribbon widths
+    kpi_ribbon_width = content_width * 0.55
+    chart_width = content_width * 0.40
+
+    card_width = (kpi_ribbon_width - (len(kpis) - 1) * kpi_spacing) / len(kpis)
+
     card_x = left_x
-    card_w = content_width
-    card_h = 26
-    spacing = 4
-    kpi_y = y - 10
+    card_y = ribbon_y
 
+    # Draw KPI Ribbon (horizontal small cards)
     for title, value in kpis:
+        # Background
         c.setFillColor(REGAL_LIGHT_BLUE)
-        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=1, stroke=0)
+        c.rect(card_x, card_y - kpi_height, card_width, kpi_height, fill=1, stroke=0)
 
+        # Border
         c.setStrokeColor(REGAL_BLUE)
-        c.rect(card_x, kpi_y - card_h, card_w, card_h, fill=0, stroke=1)
+        c.rect(card_x, card_y - kpi_height, card_width, kpi_height, fill=0, stroke=1)
 
+        # Text
         c.setFillColor(REGAL_BLUE)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(card_x + 8, kpi_y - 10, title)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(card_x + 4, card_y - 7, title)
 
-        c.setFont("Helvetica", 10)
         c.setFillColor(colors.black)
-        c.drawString(card_x + 8, kpi_y - 21, value)
+        c.setFont("Helvetica", 8)
+        c.drawString(card_x + 4, card_y - 17, value)
 
-        kpi_y -= (card_h + spacing)
+        card_x += card_width + kpi_spacing
 
-    # VERTICAL SALES COMPARISON TABLE (years as rows, customers as columns)
-    table_top_y = kpi_y - 30
+    # --- CHART beside KPI ribbon ---
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format="png", bbox_inches="tight")
+    img_buf.seek(0)
+
+    chart_x = left_x + kpi_ribbon_width + 12
+    c.drawImage(
+        ImageReader(img_buf),
+        chart_x,
+        card_y - kpi_height - 10,
+        width=chart_width,
+        height=110,
+        preserveAspectRatio=True,
+    )
+
+    # --- VERTICAL SALES TABLE UNDERNEATH ---
+    table_top = card_y - kpi_height - 40
+
     c.setFont("Helvetica-Bold", 13)
     c.setFillColor(REGAL_BLUE)
-    c.drawString(left_x, table_top_y, "Sales Comparison Table")
+    c.drawString(left_x, table_top, "Sales Comparison Table")
     c.setFillColor(colors.black)
-    table_y = table_top_y - 18
 
-    # Restrict to at most 3 customers (you chose "1" = up to 3)
+    table_y = table_top - 20
+
+    # Limit to 3 customers max (for layout)
     customers = list(comparison_df_num.index)[:3]
 
-    # Build vertical structure
+    # Row labels
     row_labels = YEAR_COLS + ["Total"]
 
-    # Column positions
-    year_col_width = 70
+    # Column layout
+    year_col_width = 80
     remaining_width = content_width - year_col_width
-    if len(customers) > 0:
-        cust_col_width = remaining_width / len(customers)
-    else:
-        cust_col_width = remaining_width
+    cust_col_width = remaining_width / max(1, len(customers))
 
-    col_x = [left_x]
-    col_x.append(left_x + year_col_width)
-    for i in range(len(customers) - 1):
+    col_x = [left_x, left_x + year_col_width]
+    for _ in range(len(customers) - 1):
         col_x.append(col_x[-1] + cust_col_width)
 
-    # Header row
-    header_height = 18
+    # Header
+    header_h = 18
+    table_total_width = year_col_width + cust_col_width * len(customers)
+
     c.setFillColorRGB(0.88, 0.88, 0.88)
-    table_total_width = year_col_width + cust_col_width * max(1, len(customers))
-    c.rect(left_x, table_y - 4, table_total_width, header_height, fill=1, stroke=0)
+    c.rect(left_x, table_y - 3, table_total_width, header_h, fill=1, stroke=0)
     c.setFillColor(colors.black)
 
     c.setFont("Helvetica-Bold", 10)
@@ -380,46 +408,36 @@ def generate_multi_pdf(selected_rows, fig, comparison_df_num):
         label = cust if len(cust) <= 18 else cust[:16] + "…"
         c.drawString(col_x[i + 1] + 4, table_y, label)
 
-    table_y -= header_height
+    table_y -= header_h
 
-    # Table rows (years)
+    # Draw rows
     c.setFont("Helvetica", 9)
-    row_h = 16
+    row_h = 15
 
-    for r_index, label in enumerate(row_labels):
-        # alternate shading
-        if r_index % 2 == 0:
+    for idx, label in enumerate(row_labels):
+        # Shading
+        if idx % 2 == 0:
             c.setFillColorRGB(0.96, 0.96, 0.96)
             c.rect(left_x, table_y - 2, table_total_width, row_h, fill=1, stroke=0)
             c.setFillColor(colors.black)
 
+        # Year label
         c.drawString(col_x[0] + 2, table_y, label)
 
+        # Values per customer
         for i, cust in enumerate(customers):
             if label == "Total":
                 val = comparison_df_num.loc[cust, "Total"]
             else:
                 year_int = int(label)
                 val = comparison_df_num.loc[cust, year_int] if year_int in comparison_df_num.columns else np.nan
+
             s = format_money(val) if not pd.isna(val) else ""
             c.drawRightString(col_x[i + 1] + cust_col_width - 6, table_y, s)
 
         table_y -= row_h
 
-    # CHART – full width bottom
-    img_buf = io.BytesIO()
-    fig.savefig(img_buf, format="png", bbox_inches="tight")
-    img_buf.seek(0)
-
-    c.drawImage(
-        ImageReader(img_buf),
-        left_x,
-        40,
-        width=content_width,
-        height=170,
-        preserveAspectRatio=True,
-    )
-
+    # Finish
     c.showPage()
     c.save()
     buffer.seek(0)
